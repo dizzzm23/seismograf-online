@@ -1,2 +1,2 @@
 # seismograf-online
-testing seismograf-online by SMANDAPA
+testing seismograf-online by Mr. Dizzzm
