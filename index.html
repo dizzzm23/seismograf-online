@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESP32 Seismograph Dashboard (Firebase)</title>
+    
+    <!-- Chart.js Library -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <!-- Firebase JS SDK (v8 Compatible) -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #121212;
+            color: #ffffff;
+            text-align: center;
+            margin: 0;
+            padding: 20px;
+            transition: background-color 0.4s ease;
+        }
+
+        .card {
+            background-color: #1e1e1e;
+            border-radius: 16px;
+            padding: 25px;
+            max-width: 850px;
+            margin: 0 auto;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.6);
+        }
+
+        h1 {
+            margin-top: 0;
+            font-size: 24px;
+            color: #4CAF50;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 10px 24px;
+            font-size: 20px;
+            font-weight: bold;
+            border-radius: 50px;
+            background-color: #2e2e2e;
+            color: #00E676;
+            margin: 15px 0;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+            transition: all 0.3s ease;
+        }
+
+        .metrics-grid {
+            display: flex;
+            justify-content: space-around;
+            margin: 20px 0;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .metric-box {
+            background-color: #2a2a2a;
+            padding: 15px 20px;
+            border-radius: 10px;
+            min-width: 120px;
+        }
+
+        .metric-val {
+            font-size: 22px;
+            font-weight: bold;
+            color: #FFD700;
+        }
+
+        .metric-label {
+            font-size: 12px;
+            color: #aaa;
+            margin-top: 5px;
+        }
+
+        .alarm-bg {
+            background-color: #5c0000 !important;
+        }
+
+        .alarm-badge {
+            background-color: #FF1744 !important;
+            color: #ffffff !important;
+            animation: pulse 1s infinite alternate;
+        }
+
+        @keyframes pulse {
+            from { transform: scale(1); }
+            to { transform: scale(1.05); }
+        }
+
+        canvas {
+            margin-top: 15px;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="card">
+        <h1>🌐 Seismograph Cloud Monitoring</h1>
+        <p style="color:#888; font-size: 13px;">Connected via Firebase Realtime Database</p>
+
+        <div id="statusBadge" class="status-badge">MEMUAT DATA...</div>
+
+        <div class="metrics-grid">
+            <div class="metric-box">
+                <div id="accX" class="metric-val">0.00</div>
+                <div class="metric-label">Acc X (m/s²)</div>
+            </div>
+            <div class="metric-box">
+                <div id="accY" class="metric-val">0.00</div>
+                <div class="metric-label">Acc Y (m/s²)</div>
+            </div>
+            <div class="metric-box">
+                <div id="accZ" class="metric-val">0.00</div>
+                <div class="metric-label">Acc Z (m/s²)</div>
+            </div>
+            <div class="metric-box">
+                <div id="vibrVal" class="metric-val" style="color:#00E676;">0.00</div>
+                <div class="metric-label">Getaran (Deviasi)</div>
+            </div>
+        </div>
+
+        <canvas id="cloudChart"></canvas>
+    </div>
+
+    <script>
+        // Config Firebase Realtime Database
+        const firebaseConfig = {
+            databaseURL: "https://esp32mrdizzzm-default-rtdb.firebaseio.com/"
+        };
+
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
+        const database = firebase.database();
+
+        // Setup Chart.js
+        const ctx = document.getElementById('cloudChart').getContext('2d');
+        const chart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [
+                    { label: 'Acc X', borderColor: '#FF5252', data: [], fill: false, pointRadius: 0, tension: 0.1 },
+                    { label: 'Acc Y', borderColor: '#FFD700', data: [], fill: false, pointRadius: 0, tension: 0.1 },
+                    { label: 'Acc Z', borderColor: '#00E676', data: [], fill: false, pointRadius: 0, tension: 0.1 }
+                ]
+            },
+            options: {
+                responsive: true,
+                animation: false,
+                scales: {
+                    x: { display: false },
+                    y: { min: -15, max: 15 }
+                }
+            }
+        });
+
+        const statusBadge = document.getElementById('statusBadge');
+        const accXDiv = document.getElementById('accX');
+        const accYDiv = document.getElementById('accY');
+        const accZDiv = document.getElementById('accZ');
+        const vibrValDiv = document.getElementById('vibrVal');
+
+        // Stream Data Realtime dari Firebase path "/seismograf/sensor_data"
+        database.ref('/seismograf/sensor_data').on('value', (snapshot) => {
+            const data = snapshot.val();
+            if (data) {
+                const time = new Date().toLocaleTimeString();
+
+                // Update Angka
+                accXDiv.innerText = data.acc_x.toFixed(2);
+                accYDiv.innerText = data.acc_y.toFixed(2);
+                accZDiv.innerText = data.acc_z.toFixed(2);
+                vibrValDiv.innerText = data.vibration.toFixed(2);
+
+                // Update Grafik
+                if (chart.data.labels.length > 40) {
+                    chart.data.labels.shift();
+                    chart.data.datasets.forEach(d => d.data.shift());
+                }
+                chart.data.labels.push(time);
+                chart.data.datasets[0].data.push(data.acc_x);
+                chart.data.datasets[1].data.push(data.acc_y);
+                chart.data.datasets[2].data.push(data.acc_z);
+                chart.update();
+
+                // Update Status Gempa & Tampilan UI
+                if (data.gempa_status && data.gempa_status.includes("WARNING")) {
+                    statusBadge.innerText = "⚠️ WARNING: TERDETEKSI GEMPA! ⚠️";
+                    statusBadge.classList.add('alarm-badge');
+                    document.body.classList.add('alarm-bg');
+                } else {
+                    statusBadge.innerText = "STATUS: AMAN (NORMAL)";
+                    statusBadge.classList.remove('alarm-badge');
+                    document.body.classList.remove('alarm-bg');
+                }
+            }
+        });
+    </script>
+</body>
+</html>
